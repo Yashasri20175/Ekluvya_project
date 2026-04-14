@@ -5,11 +5,11 @@ import 'package:provider/provider.dart';
 
 import 'core/utils/logger.dart';
 import 'screens/home_screen.dart';
-import 'screens/login_screen.dart';
-import 'screens/otp_screen.dart';
-import 'screens/registration_screen.dart';
-import 'screens/splash_screen.dart';
-import 'screens/student_password_screen.dart';
+// import 'screens/login_screen.dart';
+// import 'screens/otp_screen.dart';
+// import 'screens/registration_screen.dart';
+// import 'screens/splash_screen.dart';
+// import 'screens/student_password_screen.dart';
 import 'services/api_service.dart';
 import 'viewmodels/auth_viewmodel.dart';
 import 'viewmodels/registration_viewmodel.dart';
@@ -79,14 +79,14 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFE91E63)),
         useMaterial3: true,
       ),
-      initialRoute: '/',
+      initialRoute: '/home',
       routes: {
-        '/': (context) => const SplashScreen(),
-        '/login': (context) => const LoginScreen(),
-        '/otp': (context) => const OtpScreen(),
-        '/register': (context) => const RegistrationScreen(),
+        // '/': (context) => const SplashScreen(),
+        // '/login': (context) => const LoginScreen(),
+        // '/otp': (context) => const OtpScreen(),
+        // '/register': (context) => const RegistrationScreen(),
         '/home': (context) => const HomeScreen(),
-        '/student-password': (context) => const StudentPasswordScreen(),
+        // '/student-password': (context) => const StudentPasswordScreen(),
       },
       // Widget-level error boundary — shows a friendly UI instead of a red screen
       builder: (context, child) {

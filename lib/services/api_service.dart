@@ -8,6 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants/app_constants.dart';
 import '../core/errors/app_exception.dart';
 import '../core/utils/logger.dart';
+import '../models/banner_model.dart';
+import '../models/home_stream_model.dart';
+import '../models/language_model.dart';
 
 class ApiService {
   static const _tag = 'ApiService';
@@ -20,7 +23,7 @@ class ApiService {
     AppLogger.error(_tag, '$label → ${e.runtimeType}: $e', e, st);
 
     if (e is dart_async.TimeoutException) throw const RequestTimeoutException();
-    if (e is IOException)                 throw const NetworkException();
+    if (e is IOException) throw const NetworkException();
     if (e is http.ClientException) {
       AppLogger.error(_tag, 'ClientException detail: ${e.message}');
       final msg = e.message.toLowerCase();
@@ -36,7 +39,7 @@ class ApiService {
 
   Map<String, dynamic> _decode(http.Response res, String label) {
     AppLogger.info(_tag, '$label → ${res.statusCode}');
-    AppLogger.info(_tag, 'BODY: ${res.body}');           // ← full body logged
+    AppLogger.info(_tag, 'BODY: ${res.body}'); // ← full body logged
 
     if (res.body.trimLeft().startsWith('<!')) {
       AppLogger.error(_tag, '$label returned HTML — check URL / headers');
@@ -64,8 +67,11 @@ class ApiService {
     AppLogger.info(_tag, 'POST $url | ${jsonEncode(body)}');
     try {
       final res = await http
-          .post(Uri.parse(url),
-              headers: headers ?? _jsonHeaders, body: jsonEncode(body))
+          .post(
+            Uri.parse(url),
+            headers: headers ?? _jsonHeaders,
+            body: jsonEncode(body),
+          )
           .timeout(AppConstants.apiTimeout);
       return _decode(res, url);
     } catch (e, st) {
@@ -117,14 +123,12 @@ class ApiService {
 
   /// Step 2a — send OTP
   /// Params as per developer docs: code, to, is_phone_verified
-  Future<Map<String, dynamic>> sendOtp(String phone) => _post(
-        '/auth/send-newOtp',
-        {
-          'code': AppConstants.countryCode,   // "+91"
-          'to': phone,
-          'is_phone_verified': 0,
-        },
-      );
+  Future<Map<String, dynamic>> sendOtp(String phone) =>
+      _post('/auth/send-newOtp', {
+        'code': AppConstants.countryCode, // "+91"
+        'to': phone,
+        'is_phone_verified': 0,
+      });
 
   /// Step 3a — verify OTP
   /// Params as per developer docs: phone, otp, browsername, deviceDetail,
@@ -133,7 +137,7 @@ class ApiService {
       _post('/auth/validate-otp', {
         'phone': phone,
         'otp': otp,
-        'browsername': '',                    // empty string per developer docs
+        'browsername': '', // empty string per developer docs
         'deviceDetail': Platform.isIOS ? 'iPhone' : 'Android',
         'is_phone_verified': 1,
       });
@@ -143,7 +147,7 @@ class ApiService {
   /// Developer docs had copy-paste error (showed sendOtp params instead).
   Future<Map<String, dynamic>> phoneLogin(String phone) =>
       _post('/auth/phone-login', {
-        'phone': phone,                       // ← correct field name
+        'phone': phone, // ← correct field name
         'is_phone_verified': 1,
         'browsername': '',
         'deviceDetail': Platform.isIOS ? 'iPhone' : 'Android',
@@ -157,10 +161,10 @@ class ApiService {
     required String username,
     required String password,
   }) async {
-    final decoded = await _post(
-      '/auth/student-login',
-      {'username': username, 'password': password},
-    );
+    final decoded = await _post('/auth/student-login', {
+      'username': username,
+      'password': password,
+    });
     final ok = decoded['status'] == 'success' || decoded['statusCode'] == 200;
     if (ok) {
       final response = decoded['response'];
@@ -198,9 +202,9 @@ class ApiService {
         'first_name': firstName,
         'email': email,
         'phone': phone,
-        'login_type': 'normal',               // required per developer docs
+        'login_type': 'normal', // required per developer docs
         'country_code': AppConstants.countryCode,
-        'iso': 'in',                           // ISO country code per developer docs
+        'iso': 'in', // ISO country code per developer docs
         'is_phone_verified': '1',
         'browsername': '',
         'deviceDetail': Platform.isIOS ? 'iPhone' : 'Android',
@@ -208,7 +212,8 @@ class ApiService {
         'last_name': lastName,
         'gender': gender,
         'preparing_for': preparingFor,
-        'dob': '${dob.day.toString().padLeft(2, '0')}/'
+        'dob':
+            '${dob.day.toString().padLeft(2, '0')}/'
             '${dob.month.toString().padLeft(2, '0')}/'
             '${dob.year}',
       });
@@ -247,8 +252,198 @@ class ApiService {
     );
   }
 
-  Future<Map<String, dynamic>> fetchCommonFeatures() => _get(
-        '/common',
-        overrideUrl: '${AppConstants.mediaBaseUrl}/common',
+  Future<Map<String, dynamic>> fetchCommonFeatures() =>
+      _get('/common', overrideUrl: '${AppConstants.mediaBaseUrl}/common');
+
+  // ── Banners ───────────────────────────────────────────────────────────────
+
+  /// Fetch banner images from the server
+  /// API endpoint: /mediaview/api/v1/homebanners/banner-images
+  Future<List<Banner>> fetchBanners() async {
+    try {
+      final response = await _get(
+        '/homebanners/banner-images',
+        overrideUrl: '${AppConstants.mediaBaseUrl}/homebanners/banner-images',
       );
+
+      AppLogger.info(_tag, 'fetchBanners response: $response');
+
+      // API returns data nested under 'response' key
+      final responseData = response['response'] as Map<String, dynamic>? ?? {};
+      final data = responseData['data'] as List<dynamic>? ?? [];
+      AppLogger.info(_tag, 'fetchBanners data length: ${data.length}');
+
+      final banners = data.map((item) {
+        AppLogger.info(_tag, 'Processing banner item: $item');
+        return Banner.fromJson(item as Map<String, dynamic>);
+      }).toList();
+
+      // Sort by order field
+      banners.sort((a, b) => a.order.compareTo(b.order));
+
+      AppLogger.info(_tag, 'fetchBanners returning ${banners.length} banners');
+      for (var banner in banners) {
+        AppLogger.info(
+          _tag,
+          'Banner: ${banner.title}, img: ${banner.bannerImg}',
+        );
+      }
+
+      return banners;
+    } catch (e, st) {
+      AppLogger.error(_tag, 'fetchBanners failed: $e', e, st);
+      rethrow;
+    }
+  }
+
+  Future<List<HomeStream>> fetchHomeStreams({
+    int limit = 5,
+    int insideLimit = 12,
+  }) async {
+    try {
+      final response = await _get(
+        '/home/gethome-data?limit=$limit&inside_limit=$insideLimit',
+        overrideUrl:
+            '${AppConstants.mediaBaseUrl}/home/gethome-data?limit=$limit&inside_limit=$insideLimit',
+      );
+
+      AppLogger.info(_tag, 'fetchHomeStreams response: $response');
+
+      final responseData = response['response'] as Map<String, dynamic>?;
+      final rawData = response['data'] ?? responseData?['data'];
+      final dataList = rawData is List ? rawData : <dynamic>[];
+
+      if (dataList.isEmpty) {
+        AppLogger.info(
+          _tag,
+          'fetchHomeStreams found no data in response keys. response["data"]=${response['data']} response["response"]=$responseData',
+        );
+      }
+
+      final streams = dataList
+          .map((item) => HomeStream.fromJson(item as Map<String, dynamic>))
+          .toList();
+
+      AppLogger.info(
+        _tag,
+        'fetchHomeStreams returning ${streams.length} streams',
+      );
+      return streams;
+    } catch (e, st) {
+      AppLogger.error(_tag, 'fetchHomeStreams failed: $e', e, st);
+      rethrow;
+    }
+  }
+
+  Future<String> fetchAppLogoUrl() async {
+    try {
+      final response = await _get(
+        '/app-logo',
+        overrideUrl: '${AppConstants.mediaBaseUrl}/app-logo',
+      );
+
+      AppLogger.info(_tag, 'fetchAppLogoUrl response: $response');
+      final responseData = response['response'] as Map<String, dynamic>?;
+      final rawData = response['data'] ?? responseData?['data'];
+      final logoItems = rawData is List ? rawData : <dynamic>[];
+      if (logoItems.isEmpty) {
+        throw ServerException('Logo data is empty');
+      }
+
+      final firstItem = logoItems.first as Map<String, dynamic>;
+      final path = firstItem['path'] as Map<String, dynamic>?;
+      final logoPath = path?['light'] as String? ?? path?['dark'] as String?;
+      if (logoPath == null || logoPath.isEmpty) {
+        throw ServerException('Logo path missing');
+      }
+
+      if (logoPath.startsWith('http')) {
+        return logoPath;
+      }
+
+      final normalizedPath = logoPath.startsWith('/')
+          ? logoPath.substring(1)
+          : logoPath;
+      final fullUrl = '${AppConstants.logoBaseUrl}/$normalizedPath';
+      AppLogger.info(_tag, 'Constructed app logo URL: $fullUrl');
+      return fullUrl;
+    } catch (e, st) {
+      AppLogger.error(_tag, 'fetchAppLogoUrl failed: $e', e, st);
+      rethrow;
+    }
+  }
+
+  /// Fetch supported languages from the server
+  /// API endpoint: /mediaview/api/v1/language
+  Future<List<Language>> fetchLanguages() async {
+    try {
+      final response = await _get('/language');
+
+      AppLogger.info(_tag, 'fetchLanguages response: $response');
+
+      // API returns data nested under 'response' key or directly as array
+      final responseData = response['response'] as Map<String, dynamic>? ?? {};
+      final data =
+          responseData['data'] as List<dynamic>? ??
+          response['data'] as List<dynamic>? ??
+          [];
+
+      if (data.isEmpty && response is Map<String, dynamic>) {
+        // If response is a single language object, wrap it in a list
+        final singleLanguage = Language.fromJson(response);
+        return [singleLanguage];
+      }
+
+      final languages = data.map((item) {
+        AppLogger.info(_tag, 'Processing language item: $item');
+        return Language.fromJson(item as Map<String, dynamic>);
+      }).toList();
+
+      AppLogger.info(
+        _tag,
+        'fetchLanguages returning ${languages.length} languages',
+      );
+      return languages;
+    } catch (e, st) {
+      AppLogger.error(_tag, 'fetchLanguages failed: $e', e, st);
+      rethrow;
+    }
+  }
+
+  /// Build full CloudFront URL for banner image
+  String getBannerImageUrl(String bannerImg) {
+    const cloudFrontBaseUrl = 'https://d38zvxejdrf8bt.cloudfront.net/';
+    final normalizedPath = bannerImg.startsWith('/')
+        ? bannerImg.substring(1)
+        : bannerImg;
+    final fullUrl = '$cloudFrontBaseUrl$normalizedPath';
+    AppLogger.info(_tag, 'Constructed banner URL: $fullUrl');
+    return fullUrl;
+  }
+
+  String getMediaImageUrl(String imagePath) {
+    if (imagePath.startsWith('http')) {
+      return imagePath;
+    }
+
+    final normalizedPath = imagePath.startsWith('/')
+        ? imagePath.substring(1)
+        : imagePath;
+
+    if (normalizedPath.startsWith('course-images/') ||
+        normalizedPath.startsWith('banner-images/')) {
+      const cloudFrontBaseUrl = 'https://d38zvxejdrf8bt.cloudfront.net/';
+      final fullUrl = '$cloudFrontBaseUrl$normalizedPath';
+      AppLogger.info(_tag, 'Constructed CloudFront media URL: $fullUrl');
+      return fullUrl;
+    }
+
+    const apiPrefix = '/api/v1';
+    final baseUrl = AppConstants.mediaBaseUrl.endsWith(apiPrefix)
+        ? AppConstants.mediaBaseUrl.replaceFirst(apiPrefix, '')
+        : AppConstants.mediaBaseUrl;
+    final fullUrl = '$baseUrl/$normalizedPath';
+    AppLogger.info(_tag, 'Constructed media image URL: $fullUrl');
+    return fullUrl;
+  }
 }
