@@ -3,16 +3,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'core/utils/logger.dart';
-import 'screens/home_screen.dart';
-// import 'screens/login_screen.dart';
-// import 'screens/otp_screen.dart';
-// import 'screens/registration_screen.dart';
-// import 'screens/splash_screen.dart';
-// import 'screens/student_password_screen.dart';
-import 'services/api_service.dart';
-import 'viewmodels/auth_viewmodel.dart';
-import 'viewmodels/registration_viewmodel.dart';
+import 'package:ekluvya_app/core/utils/logger.dart';
+import 'package:ekluvya_app/models/chapter_model.dart';
+import 'package:ekluvya_app/models/home_stream_model.dart';
+import 'package:ekluvya_app/models/subject_model.dart';
+import 'package:ekluvya_app/screens/chapters_screen.dart';
+import 'package:ekluvya_app/screens/home_screen.dart';
+import 'package:ekluvya_app/screens/subjects_screen.dart';
+import 'package:ekluvya_app/screens/videos_screen.dart';
+import 'package:ekluvya_app/services/api_service.dart';
+import 'package:ekluvya_app/viewmodels/auth_viewmodel.dart';
+import 'package:ekluvya_app/viewmodels/registration_viewmodel.dart';
 
 void main() {
   // runZonedGuarded catches all uncaught async errors — the last safety net
@@ -86,6 +87,30 @@ class MyApp extends StatelessWidget {
         // '/otp': (context) => const OtpScreen(),
         // '/register': (context) => const RegistrationScreen(),
         '/home': (context) => const HomeScreen(),
+        '/subjects': (context) => SubjectsScreen(
+          course: ModalRoute.of(context)!.settings.arguments as CourseCategory,
+        ),
+        '/chapters': (context) {
+          final args =
+              ModalRoute.of(context)!.settings.arguments
+                  as Map<String, dynamic>;
+          return ChaptersScreen(
+            subject: args['subject'] as Subject,
+            courseId: args['courseId'] as String,
+            classId: args['classId'] as String,
+          );
+        },
+        '/videos': (context) {
+          final args =
+              ModalRoute.of(context)!.settings.arguments
+                  as Map<String, dynamic>;
+          return VideosScreen(
+            chapter: args['chapter'] as Chapter,
+            courseId: args['courseId'] as String,
+            subjectId: args['subjectId'] as String,
+            classId: args['classId'] as String,
+          );
+        },
         // '/student-password': (context) => const StudentPasswordScreen(),
       },
       // Widget-level error boundary — shows a friendly UI instead of a red screen

@@ -7,8 +7,8 @@ abstract class AppConstants {
       'https://stg-ottapi.ekluvya.guru/users/api/v1';
   static const String mediaBaseUrl =
       'https://stg-ottapi.ekluvya.guru/mediaview/api/v1';
-  static const String logoBaseUrl =
-      'https://ekluvya-staging-s3.s3.ap-south-1.amazonaws.com/static/images';
+  static const String cloudFrontBaseUrl =
+      'https://d38zvxejdrf8bt.cloudfront.net';
 
   /// Global timeout for every HTTP request.
   static const Duration apiTimeout = Duration(seconds: 15);

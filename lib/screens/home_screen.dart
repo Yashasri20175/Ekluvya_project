@@ -1,12 +1,13 @@
+import 'package:ekluvya_app/core/utils/logger.dart';
+import 'package:ekluvya_app/models/banner_model.dart';
+import 'package:ekluvya_app/models/home_stream_model.dart';
+import 'package:ekluvya_app/models/language_model.dart';
+import 'package:ekluvya_app/models/signed_cookies_model.dart';
+import 'package:ekluvya_app/models/watch_history_model.dart';
+import 'package:ekluvya_app/services/api_service.dart';
+import 'package:ekluvya_app/widgets/banner_carousel.dart';
 import 'package:flutter/material.dart' hide Banner;
 import 'package:provider/provider.dart';
-
-import '../core/utils/logger.dart';
-import '../models/banner_model.dart';
-import '../models/home_stream_model.dart';
-import '../models/language_model.dart';
-import '../services/api_service.dart';
-import '../widgets/banner_carousel.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,6 +20,8 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<List<Banner>> _bannersFuture;
   late Future<List<HomeStream>> _homeStreamsFuture;
   late Future<List<Language>> _languagesFuture;
+  late Future<WatchHistoryResponse> _watchHistoryFuture;
+  late Future<SignedCookiesResponse> _signedCookiesFuture;
 
   @override
   void initState() {
@@ -26,13 +29,18 @@ class _HomeScreenState extends State<HomeScreen> {
     _bannersFuture = context.read<ApiService>().fetchBanners();
     _homeStreamsFuture = context.read<ApiService>().fetchHomeStreams();
     _languagesFuture = context.read<ApiService>().fetchLanguages();
+    // Using a sample profile ID from the API response
+    _watchHistoryFuture = context.read<ApiService>().fetchWatchHistory(
+      profileId: '69df2fff0e3e0b628f388e6d',
+    );
+    _signedCookiesFuture = context.read<ApiService>().getSignedCookies();
   }
 
-  Future<void> _logout(BuildContext context) async {
-    await context.read<ApiService>().clearToken();
-    if (!context.mounted) return;
-    Navigator.pushReplacementNamed(context, '/login');
-  }
+  // Future<void> _logout(BuildContext context) async {
+  //   await context.read<ApiService>().clearToken();
+  //   if (!context.mounted) return;
+  //   Navigator.pushReplacementNamed(context, '/login');
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -162,9 +170,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: streams
-                      .map((stream) => _StreamSection(stream: stream))
-                      .toList(),
+                  children: [
+                    ...streams.map((stream) => _StreamSection(stream: stream)),
+                    const SizedBox(height: 24),
+                    const _TestYourselfSection(),
+                  ],
                 );
               },
             ),
@@ -185,6 +195,38 @@ class _HomeScreenState extends State<HomeScreen> {
                       'Language: ${lang.name} (${lang.code}) - Default: ${lang.isDefault}',
                     );
                   }
+                }
+                // Don't show anything in UI, just ensure the API is called
+                return const SizedBox.shrink();
+              },
+            ),
+            // Watch History future - called when page opens
+            FutureBuilder<WatchHistoryResponse>(
+              future: _watchHistoryFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.done &&
+                    snapshot.hasData) {
+                  final watchHistory = snapshot.data!;
+                  AppLogger.info(
+                    'HomeScreen',
+                    'Fetched ${watchHistory.response.data.length} watch history items',
+                  );
+                }
+                // Don't show anything in UI, just ensure the API is called
+                return const SizedBox.shrink();
+              },
+            ),
+            // Signed Cookies future - called when page opens
+            FutureBuilder<SignedCookiesResponse>(
+              future: _signedCookiesFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.done &&
+                    snapshot.hasData) {
+                  final signedCookies = snapshot.data!;
+                  AppLogger.info(
+                    'HomeScreen',
+                    'Fetched signed cookies, expires: ${signedCookies.expires}',
+                  );
                 }
                 // Don't show anything in UI, just ensure the API is called
                 return const SizedBox.shrink();
@@ -249,7 +291,17 @@ class _StreamSection extends StatelessWidget {
               itemCount: stream.categories.length,
               separatorBuilder: (context, index) => const SizedBox(width: 12),
               itemBuilder: (context, index) {
-                return _CourseCategoryCard(category: stream.categories[index]);
+                return _CourseCategoryCard(
+                  category: stream.categories[index],
+                  onTap: () {
+                    // Navigate to subjects screen
+                    Navigator.pushNamed(
+                      context,
+                      '/subjects',
+                      arguments: stream.categories[index],
+                    );
+                  },
+                );
               },
             ),
           ),
@@ -261,8 +313,9 @@ class _StreamSection extends StatelessWidget {
 
 class _CourseCategoryCard extends StatelessWidget {
   final CourseCategory category;
+  final VoidCallback? onTap;
 
-  const _CourseCategoryCard({required this.category});
+  const _CourseCategoryCard({required this.category, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -270,78 +323,82 @@ class _CourseCategoryCard extends StatelessWidget {
       category.profilePicture,
     );
 
-    return SizedBox(
-      width: 170,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            const BoxShadow(
-              color: Color.fromRGBO(0, 0, 0, 0.16),
-              blurRadius: 20,
-              offset: Offset(0, 10),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Image.network(
-                imageUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  color: Colors.grey[200],
-                  child: const Center(
-                    child: Icon(Icons.image_not_supported_outlined),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: SizedBox(
+        width: 170,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              const BoxShadow(
+                color: Color.fromRGBO(0, 0, 0, 0.16),
+                blurRadius: 20,
+                offset: Offset(0, 10),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.network(
+                  imageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    color: Colors.grey[200],
+                    child: const Center(
+                      child: Icon(Icons.image_not_supported_outlined),
+                    ),
                   ),
                 ),
-              ),
-              Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Color.fromRGBO(0, 0, 0, 0.05),
-                      Color.fromRGBO(0, 0, 0, 0.85),
-                    ],
-                    stops: [0.45, 1.0],
+                Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color.fromRGBO(0, 0, 0, 0.05),
+                        Color.fromRGBO(0, 0, 0, 0.85),
+                      ],
+                      stops: [0.45, 1.0],
+                    ),
                   ),
                 ),
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color.fromRGBO(0, 0, 0, 0.6),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      category.title.toUpperCase(),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                        letterSpacing: 0.7,
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color.fromRGBO(0, 0, 0, 0.6),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        category.title.toUpperCase(),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                          letterSpacing: 0.7,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -369,6 +426,159 @@ class _InfoChip extends StatelessWidget {
           color: Colors.white,
           fontSize: 12,
           fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+}
+
+class _TestYourselfSection extends StatelessWidget {
+  const _TestYourselfSection();
+
+  static const _items = [
+    _TestYourselfData(
+      title: 'IIT JEE GRAND TEST',
+      imageUrl:
+          'https://stg-ott.ekluvya.guru/assets/images/IIT%20JEE%20EXAM.png',
+    ),
+    _TestYourselfData(
+      title: 'NEET GRAND TEST',
+      imageUrl: 'https://stg-ott.ekluvya.guru/assets/images/NEET%20EXAM.png',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'TEST YOURSELF',
+                style: TextStyle(
+                  color: Color(0xFFe41468),
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFe41468),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  '20 TESTS',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              for (var i = 0; i < _items.length; i++) ...[
+                Expanded(child: _TestYourselfCard(data: _items[i])),
+                if (i < _items.length - 1) const SizedBox(width: 12),
+              ],
+            ],
+          ),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+}
+
+class _TestYourselfData {
+  final String title;
+  final String imageUrl;
+
+  const _TestYourselfData({required this.title, required this.imageUrl});
+}
+
+class _TestYourselfCard extends StatelessWidget {
+  final _TestYourselfData data;
+
+  const _TestYourselfCard({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 1.1,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: const [
+            BoxShadow(
+              color: Color.fromRGBO(0, 0, 0, 0.16),
+              blurRadius: 20,
+              offset: Offset(0, 10),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.network(
+                data.imageUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => Container(
+                  color: Colors.grey[200],
+                  child: const Center(
+                    child: Icon(Icons.image_not_supported_outlined),
+                  ),
+                ),
+              ),
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color.fromRGBO(0, 0, 0, 0.05),
+                      Color.fromRGBO(0, 0, 0, 0.75),
+                    ],
+                    stops: [0.4, 1.0],
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(14.0),
+                  color: const Color.fromRGBO(0, 0, 0, 0.55),
+                  child: Text(
+                    data.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

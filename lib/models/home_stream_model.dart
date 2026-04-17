@@ -36,15 +36,19 @@ class HomeStream {
 }
 
 class CourseCategory {
+  final String id;
   final String title;
   final String profilePicture;
   final String classTitle;
+  final String classId;
   final String subjectTitle;
 
   CourseCategory({
+    required this.id,
     required this.title,
     required this.profilePicture,
     required this.classTitle,
+    required this.classId,
     required this.subjectTitle,
   });
 
@@ -53,10 +57,14 @@ class CourseCategory {
     final subjectTitle = json['subjectTitle'];
 
     return CourseCategory(
+      id: json['_id'] as String? ?? '',
       title: json['title'] as String? ?? '',
       profilePicture: json['profile_picture'] as String? ?? '',
       classTitle: classDetails is Map<String, dynamic>
           ? (classDetails['title'] as String? ?? '')
+          : '',
+      classId: classDetails is Map<String, dynamic>
+          ? (classDetails['_id'] as String? ?? '')
           : '',
       subjectTitle: subjectTitle is Map<String, dynamic>
           ? (subjectTitle['title'] as String? ?? '')

@@ -5,12 +5,20 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../core/constants/app_constants.dart';
-import '../core/errors/app_exception.dart';
-import '../core/utils/logger.dart';
-import '../models/banner_model.dart';
-import '../models/home_stream_model.dart';
-import '../models/language_model.dart';
+import 'package:ekluvya_app/core/constants/app_constants.dart';
+import 'package:ekluvya_app/core/errors/app_exception.dart';
+import 'package:ekluvya_app/core/utils/logger.dart';
+import 'package:ekluvya_app/models/banner_model.dart';
+import 'package:ekluvya_app/models/class_model.dart';
+import 'package:ekluvya_app/models/channel_model.dart';
+import 'package:ekluvya_app/models/channel_ratings_model.dart';
+import 'package:ekluvya_app/models/chapter_badges_model.dart';
+import 'package:ekluvya_app/models/chapter_model.dart';
+import 'package:ekluvya_app/models/home_stream_model.dart';
+import 'package:ekluvya_app/models/language_model.dart';
+import 'package:ekluvya_app/models/signed_cookies_model.dart';
+import 'package:ekluvya_app/models/subject_model.dart';
+import 'package:ekluvya_app/models/watch_history_model.dart';
 
 class ApiService {
   static const _tag = 'ApiService';
@@ -364,7 +372,7 @@ class ApiService {
       final normalizedPath = logoPath.startsWith('/')
           ? logoPath.substring(1)
           : logoPath;
-      final fullUrl = '${AppConstants.logoBaseUrl}/$normalizedPath';
+      final fullUrl = '${AppConstants.cloudFrontBaseUrl}/$normalizedPath';
       AppLogger.info(_tag, 'Constructed app logo URL: $fullUrl');
       return fullUrl;
     } catch (e, st) {
@@ -388,7 +396,7 @@ class ApiService {
           response['data'] as List<dynamic>? ??
           [];
 
-      if (data.isEmpty && response is Map<String, dynamic>) {
+      if (data.isEmpty) {
         // If response is a single language object, wrap it in a list
         final singleLanguage = Language.fromJson(response);
         return [singleLanguage];
@@ -421,6 +429,16 @@ class ApiService {
     return fullUrl;
   }
 
+  /// Resolve an hls_playlist_url to a full URL.
+  /// Already-full URLs (e.g. from player.tutorac.org) are returned as-is.
+  /// Relative paths are prefixed with the CloudFront base.
+  String getHlsUrl(String hlsPath) {
+    if (hlsPath.trim().isEmpty) return '';
+    if (hlsPath.startsWith('http')) return hlsPath;
+    final path = hlsPath.startsWith('/') ? hlsPath.substring(1) : hlsPath;
+    return '${AppConstants.cloudFrontBaseUrl}/$path';
+  }
+
   String getMediaImageUrl(String imagePath) {
     if (imagePath.startsWith('http')) {
       return imagePath;
@@ -445,5 +463,196 @@ class ApiService {
     final fullUrl = '$baseUrl/$normalizedPath';
     AppLogger.info(_tag, 'Constructed media image URL: $fullUrl');
     return fullUrl;
+  }
+
+  // ── Subjects ───────────────────────────────────────────────────────────────
+
+  /// Fetch subjects for a course and class
+  /// API endpoint: /mediaview/api/v1/home/subjects
+  Future<SubjectsResponse> fetchSubjects({
+    required String courseId,
+    required String classId,
+    int page = 1,
+    int limit = 25,
+    bool isPagination = true,
+  }) async {
+    try {
+      final response = await _get(
+        '/home/subjects?courseId=$courseId&classId=$classId&page=$page&limit=$limit&is_pagination=$isPagination',
+        overrideUrl:
+            '${AppConstants.mediaBaseUrl}/home/subjects?courseId=$courseId&classId=$classId&page=$page&limit=$limit&is_pagination=$isPagination',
+      );
+
+      AppLogger.info(_tag, 'fetchSubjects response: $response');
+      return SubjectsResponse.fromJson(response);
+    } catch (e, st) {
+      AppLogger.error(_tag, 'fetchSubjects failed: $e', e, st);
+      rethrow;
+    }
+  }
+
+  // ── Classes ────────────────────────────────────────────────────────────────
+
+  Future<ClassesResponse> fetchClasses({
+    required String courseId,
+    int limit = 15,
+  }) async {
+    try {
+      final response = await _get(
+        '/home/classes?courseId=$courseId&page=&limit=$limit&is_pagination=true',
+        overrideUrl:
+            '${AppConstants.mediaBaseUrl}/home/classes?courseId=$courseId&page=&limit=$limit&is_pagination=true',
+      );
+      AppLogger.info(_tag, 'fetchClasses response: $response');
+      return ClassesResponse.fromJson(response);
+    } catch (e, st) {
+      AppLogger.error(_tag, 'fetchClasses failed: $e', e, st);
+      rethrow;
+    }
+  }
+
+  // ── Watch History ──────────────────────────────────────────────────────────
+
+  /// Fetch user's watch history
+  /// API endpoint: /useractions/api/v1/watch-history
+  Future<WatchHistoryResponse> fetchWatchHistory({
+    String watchType = 'continue_watch',
+    bool isPromo = true,
+    required String profileId,
+    int limit = 14,
+  }) async {
+    final token = await getToken();
+    try {
+      final response = await _get(
+        '/watch-history?watch_type=$watchType&is_promo=$isPromo&profile_id=$profileId&limit=$limit',
+        overrideUrl:
+            'https://stg-ottapi.ekluvya.guru/useractions/api/v1/watch-history?watch_type=$watchType&is_promo=$isPromo&profile_id=$profileId&limit=$limit',
+        headers: {'Authorization': 'Bearer ${token ?? ''}'},
+      );
+
+      AppLogger.info(_tag, 'fetchWatchHistory response: $response');
+      return WatchHistoryResponse.fromJson(response);
+    } catch (e, st) {
+      AppLogger.error(_tag, 'fetchWatchHistory failed: $e', e, st);
+      rethrow;
+    }
+  }
+
+  // ── Chapters ───────────────────────────────────────────────────────────────
+
+  /// Fetch chapters for a subject
+  /// API endpoint: /mediaview/api/v1/home/all/chapterlist
+  Future<ChapterListResponse> fetchChapters({
+    required String courseId,
+    required String subjectId,
+    required String classId,
+  }) async {
+    try {
+      final response = await _get(
+        '/home/all/chapterlist?courseId=$courseId&subjectId=$subjectId&classId=$classId',
+        overrideUrl:
+            '${AppConstants.mediaBaseUrl}/home/all/chapterlist?courseId=$courseId&subjectId=$subjectId&classId=$classId',
+      );
+
+      AppLogger.info(_tag, 'fetchChapters response: $response');
+      return ChapterListResponse.fromJson(response);
+    } catch (e, st) {
+      AppLogger.error(_tag, 'fetchChapters failed: $e', e, st);
+      rethrow;
+    }
+  }
+
+  // ── Channels ───────────────────────────────────────────────────────────────
+
+  /// Fetch channels/videos for a chapter
+  /// API endpoint: /mediaview/api/v1/home/channel-list
+  Future<ChannelListResponse> fetchChannels({
+    required String courseId,
+    required String subjectId,
+    required String classId,
+    required String chapterId,
+    int limit = 20,
+    int insideLimit = 12,
+  }) async {
+    try {
+      final response = await _get(
+        '/home/channel-list?courseId=$courseId&subjectId=$subjectId&classId=$classId&chapterId=$chapterId&limit=$limit&inside_limit=$insideLimit',
+        overrideUrl:
+            '${AppConstants.mediaBaseUrl}/home/channel-list?courseId=$courseId&subjectId=$subjectId&classId=$classId&chapterId=$chapterId&limit=$limit&inside_limit=$insideLimit',
+      );
+
+      AppLogger.info(_tag, 'fetchChannels response: $response');
+      return ChannelListResponse.fromJson(response);
+    } catch (e, st) {
+      AppLogger.error(_tag, 'fetchChannels failed: $e', e, st);
+      rethrow;
+    }
+  }
+
+  // ── Chapter Badges ─────────────────────────────────────────────────────────
+
+  /// Fetch badges for a chapter
+  /// API endpoint: /mediaview/api/v1/badges/chapter-badges
+  Future<ChapterBadgesResponse> fetchChapterBadges({
+    required String courseId,
+    required String chapterId,
+  }) async {
+    try {
+      final response = await _get(
+        '/badges/chapter-badges?courseId=$courseId&chapterId=$chapterId',
+        overrideUrl:
+            '${AppConstants.mediaBaseUrl}/badges/chapter-badges?courseId=$courseId&chapterId=$chapterId',
+      );
+
+      AppLogger.info(_tag, 'fetchChapterBadges response: $response');
+      return ChapterBadgesResponse.fromJson(response);
+    } catch (e, st) {
+      AppLogger.error(_tag, 'fetchChapterBadges failed: $e', e, st);
+      rethrow;
+    }
+  }
+
+  // ── Channel Ratings ────────────────────────────────────────────────────────
+
+  /// Fetch ratings for channels in a chapter
+  /// API endpoint: /mediaview/api/v1/ratings/channel-ratings
+  Future<ChannelRatingsResponse> fetchChannelRatings({
+    required String chapterId,
+    required String courseId,
+    required String subjectId,
+    required String classId,
+  }) async {
+    try {
+      final response = await _get(
+        '/ratings/channel-ratings?chapterId=$chapterId&courseId=$courseId&subjectId=$subjectId&classId=$classId',
+        overrideUrl:
+            '${AppConstants.mediaBaseUrl}/ratings/channel-ratings?chapterId=$chapterId&courseId=$courseId&subjectId=$subjectId&classId=$classId',
+      );
+
+      AppLogger.info(_tag, 'fetchChannelRatings response: $response');
+      return ChannelRatingsResponse.fromJson(response);
+    } catch (e, st) {
+      AppLogger.error(_tag, 'fetchChannelRatings failed: $e', e, st);
+      rethrow;
+    }
+  }
+
+  // ── Signed Cookies ─────────────────────────────────────────────────────────
+
+  /// Get signed cookies for accessing protected content
+  /// API endpoint: /mediaview/api/get-signed-cookies
+  Future<SignedCookiesResponse> getSignedCookies() async {
+    try {
+      final response = await _get(
+        '/get-signed-cookies',
+        overrideUrl: '${AppConstants.mediaBaseUrl}/get-signed-cookies',
+      );
+
+      AppLogger.info(_tag, 'getSignedCookies response: $response');
+      return SignedCookiesResponse.fromJson(response);
+    } catch (e, st) {
+      AppLogger.error(_tag, 'getSignedCookies failed: $e', e, st);
+      rethrow;
+    }
   }
 }
